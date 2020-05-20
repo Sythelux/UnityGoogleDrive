@@ -29,7 +29,10 @@ namespace UnityGoogleDrive
         {
             settings = googleDriveSettings;
             oAuthEvent += OnAuthentication;
-            redirectUri = settings.LoopbackUri;
+            foreach (var uri in settings.GenericClientCredentials.RedirectUris.Where(uri => uri.Contains("urn")))
+                redirectUri = uri;
+            foreach (var uri in settings.GenericClientCredentials.RedirectUris.Where(uri => uri.Contains("localhost")))
+                redirectUri = uri;
             redirectDispatcher = MLDispatch.OAuthRegisterSchema(redirectUri, ref oAuthEvent);
             cancelDispatcher = MLDispatch.OAuthRegisterSchema(cancelUri, ref oAuthEvent);
         }
