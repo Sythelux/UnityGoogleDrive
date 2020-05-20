@@ -1,7 +1,8 @@
 {
     "name": "Elringus.UnityGoogleDrive.Runtime",
-    "references": [],
-    "optionalUnityReferences": [],
+    "references": [
+        "GUID:1fc69d160eafe774ab0a8e5191500311"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
@@ -9,5 +10,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": []
+    "versionDefines": [],
+    "noEngineReferences": false
 }
