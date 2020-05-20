@@ -43,7 +43,7 @@ namespace UnityGoogleDrive
             {
                 var authRequest = string.Format("{0}?response_type=token&scope={1}&redirect_uri={2}&client_id={3}",
                     settings.GenericClientCredentials.AuthUri,
-                    settings.AccessScope,
+                    Uri.EscapeDataString(settings.AccessScope),
                     Uri.EscapeDataString(redirectUri),
                     settings.GenericClientCredentials.ClientId);
 
