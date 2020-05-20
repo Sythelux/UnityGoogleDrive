@@ -41,7 +41,7 @@ namespace UnityGoogleDrive
         {
             if (string.IsNullOrEmpty(access_token)) // Access token isn't available; retrieve it.
             {
-                var authRequest = string.Format("{0}?response_type=token&scope={1}&redirect_uri={2}&client_id={3}",
+                var authRequest = string.Format("{0}?response_type=code&scope={1}&redirect_uri={2}&client_id={3}",
                     settings.GenericClientCredentials.AuthUri,
                     Uri.EscapeDataString(settings.AccessScope),
                     Uri.EscapeDataString(redirectUri),
