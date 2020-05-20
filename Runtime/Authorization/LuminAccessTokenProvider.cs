@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-#if PLATFORM_LUMIN
+#if UNITY_LUMIN
 using UnityEngine;
 using UnityEngine.XR.MagicLeap;
 
@@ -20,7 +20,7 @@ namespace UnityGoogleDrive
 
         private GoogleDriveSettings settings;
         private string access_token;
-        private string redirectUri = "redirecturi://";
+        private string redirectUri;
         private string cancelUri = "canceluri://";
         private MLResult redirectDispatcher;
         private MLResult cancelDispatcher;
@@ -29,27 +29,27 @@ namespace UnityGoogleDrive
         {
             settings = googleDriveSettings;
             oAuthEvent += OnAuthentication;
+            redirectUri = settings.LoopbackUri;
+            redirectDispatcher = MLDispatch.OAuthRegisterSchema(redirectUri, ref oAuthEvent);
+            cancelDispatcher = MLDispatch.OAuthRegisterSchema(cancelUri, ref oAuthEvent);
         }
 
         public void ProvideAccessToken()
         {
             if (string.IsNullOrEmpty(access_token)) // Access token isn't available; retrieve it.
             {
-                if (redirectDispatcher == default)
-                    redirectDispatcher = MLDispatch.OAuthRegisterSchema(redirectUri, ref oAuthEvent);
-                if (cancelDispatcher == default)
-                    cancelDispatcher = MLDispatch.OAuthRegisterSchema(cancelUri, ref oAuthEvent);
-
                 var authRequest = string.Format("{0}?response_type=token&scope={1}&redirect_uri={2}&client_id={3}",
                     settings.GenericClientCredentials.AuthUri,
                     settings.AccessScope,
-                    redirectUri,
+                    Uri.EscapeDataString(redirectUri),
                     settings.GenericClientCredentials.ClientId);
 
+                Debug.Log("Requesting: " + authRequest);
                 MLDispatch.OAuthOpenWindow(authRequest, cancelUri);
             }
             else
             {
+                Debug.Log("AccessToken: " + access_token);
                 settings.CachedAccessToken = access_token;
             }
         }
@@ -60,6 +60,9 @@ namespace UnityGoogleDrive
             var arguments = response.Substring(response.IndexOf(tokenArgName, StringComparison.InvariantCultureIgnoreCase)).Split('&').Select(q => q.Split('=')).ToDictionary(q => q.FirstOrDefault(), q => q.Skip(1).FirstOrDefault());
             if (arguments.ContainsKey(tokenArgName))
                 access_token = arguments[tokenArgName];
+            OnDone?.Invoke(this);
+            IsDone = true;
+            IsError = schema.Contains(cancelUri);
         }
     }
 }
