@@ -8,8 +8,9 @@ namespace UnityGoogleDrive
 {
     /// <summary>
     /// Provides access token using OAuth Example of Lumin: https://developer.magicleap.com/en-us/learn/guides/sdk-oauth-windows-for-unity
+    /// this is basically not working, as google doesn't allow custom redirect in OAuth2
     /// </summary>
-    public class LuminAccessTokenProvider : IAccessTokenProvider
+    public class LuminAccessTokenProviderOAuth1 : IAccessTokenProvider
     {
         private const string tokenArgName = "code";
 
@@ -25,7 +26,7 @@ namespace UnityGoogleDrive
         private MLResult redirectDispatcher;
         private MLResult cancelDispatcher;
 
-        public LuminAccessTokenProvider(GoogleDriveSettings googleDriveSettings)
+        public LuminAccessTokenProviderOAuth1(GoogleDriveSettings googleDriveSettings)
         {
             settings = googleDriveSettings;
             oAuthEvent += OnAuthentication;

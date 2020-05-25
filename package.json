@@ -1,6 +1,6 @@
 {
   "name": "com.elringus.unitygoogledrive",
-  "version": "0.27.4",
+  "version": "0.27.5",
   "displayName": "UnityGoogleDrive",
   "description": "Google Drive SDK for Unity game engine",
   "unity": "2019.3",
