@@ -1,6 +1,9 @@
 using System;
 using System.Linq;
+using System.Threading;
+using UnityEngine.Networking;
 #if UNITY_LUMIN
+using System.Collections;
 using UnityEngine;
 using UnityEngine.XR.MagicLeap;
 
@@ -8,76 +11,122 @@ namespace UnityGoogleDrive
 {
     /// <summary>
     /// Provides access token using OAuth Example of Lumin: https://developer.magicleap.com/en-us/learn/guides/sdk-oauth-windows-for-unity
+    /// this is an implementation using the google TV and limited input device workflow: https://developers.google.com/identity/protocols/oauth2/limited-input-device
     /// </summary>
     public class LuminAccessTokenProvider : IAccessTokenProvider
     {
         private const string tokenArgName = "code";
+
 
         public event Action<IAccessTokenProvider> OnDone;
         public bool IsDone { get; private set; }
         public bool IsError { get; private set; }
         public event MLDispatch.OAuthHandler oAuthEvent;
 
-        private GoogleDriveSettings settings;
-        private string authorizationCode;
-        private string redirectUri = "https://accounts.google.com/o/oauth2/approval/v2/approvalnativeapp";
-        private string cancelUri = "canceluri://";
-        private MLResult redirectDispatcher;
-        private MLResult cancelDispatcher;
+        private SynchronizationContext unitySyncContext;
+        private readonly GoogleDriveSettings settings;
+        private readonly AccessTokenRefresher accessTokenRefresher;
+        private readonly DeviceCodeExchanger deviceCodeExchanger;
+        private readonly LimitedDeviceExchanger limitedDeviceExchanger;
+        private string expectedState;
+        private string codeVerifier;
+        private string redirectUri;
+        private UnityWebRequest _deviceInitialExchangeRequest;
 
         public LuminAccessTokenProvider(GoogleDriveSettings googleDriveSettings)
         {
             settings = googleDriveSettings;
-            oAuthEvent += OnAuthentication;
-            // foreach (var uri in settings.GenericClientCredentials.RedirectUris.Where(uri => uri.Contains("urn")))
-            //     redirectUri = uri;
-            // if (string.IsNullOrEmpty(redirectUri))
-            //     foreach (var uri in settings.GenericClientCredentials.RedirectUris.Where(uri => uri.Contains("localhost")))
-            //         redirectUri = uri;
-            redirectDispatcher = MLDispatch.OAuthRegisterSchema(redirectUri, ref oAuthEvent);
-            cancelDispatcher = MLDispatch.OAuthRegisterSchema(cancelUri, ref oAuthEvent);
+            unitySyncContext = SynchronizationContext.Current;
+
+            accessTokenRefresher = new AccessTokenRefresher(settings.GenericClientCredentials);
+            accessTokenRefresher.OnDone += HandleAccessTokenRefreshed;
+
+            limitedDeviceExchanger = new LimitedDeviceExchanger(settings, settings.GenericClientCredentials);
+            limitedDeviceExchanger.OnDone += HandleLimitedDeviceExchanged;
+
+            deviceCodeExchanger = new DeviceCodeExchanger(settings, settings.GenericClientCredentials);
+            deviceCodeExchanger.OnDone += HandleDeviceCodeExchanged;
         }
 
         public void ProvideAccessToken()
         {
-            if (string.IsNullOrEmpty(authorizationCode)) // Access token isn't available; retrieve it.
+            if (string.IsNullOrEmpty(settings.CachedRefreshToken))
+                ExecuteFullAuth();
+            else accessTokenRefresher.RefreshAccessToken(settings.CachedRefreshToken);
+        }
+
+        private void HandleProvideAccessTokenComplete(bool error = false)
+        {
+            IsError = error;
+            IsDone = true;
+            OnDone?.Invoke(this);
+        }
+
+
+        private void HandleAccessTokenRefreshed(AccessTokenRefresher refresher)
+        {
+            if (refresher.IsError)
             {
-                var authRequest = string.Format("{0}?response_type=code&scope={1}&redirect_uri={2}&client_id={3}",
-                    settings.GenericClientCredentials.AuthUri,
-                    Uri.EscapeDataString(settings.AccessScope),
-                    Uri.EscapeDataString(redirectUri),
-                    settings.GenericClientCredentials.ClientId);
-                CheckAndRequestPrivilege(MLPrivileges.Id.Internet);
-                CheckAndRequestPrivilege(MLPrivileges.Id.LocalAreaNetwork);
-                CheckAndRequestPrivilege(MLPrivileges.Id.SecureBrowserWindow);
-                Debug.Log("Requesting: " + authRequest);
-                MLDispatch.OAuthOpenWindow(authRequest, cancelUri);
+                if (Debug.isDebugBuild)
+                {
+                    var message = "UnityGoogleDrive: Failed to refresh access token; executing full auth procedure.";
+                    if (!string.IsNullOrEmpty(refresher.Error))
+                        message += $"\nDetails: {refresher.Error}";
+                    Debug.Log(message);
+                }
+
+                ExecuteFullAuth();
             }
             else
             {
-                Debug.Log("AccessToken: " + authorizationCode);
-                settings.CachedAccessToken = authorizationCode;
+                settings.CachedAccessToken = refresher.AccesToken;
+                HandleProvideAccessTokenComplete();
             }
         }
 
-        private static void CheckAndRequestPrivilege(MLPrivileges.Id privilegeId)
+        private void HandleLimitedDeviceExchanged(LimitedDeviceExchanger obj)
         {
-            if (MLPrivileges.CheckPrivilege(privilegeId) == MLResult.Code.PrivilegeNotGranted)
+            if (limitedDeviceExchanger.IsError)
             {
-                Debug.LogError(MLResult.Code.PrivilegeNotGranted + ": " + privilegeId);
-                MLPrivileges.RequestPrivilege(privilegeId);
+                Debug.LogError("UnityGoogleDrive: Failed to open device Portal");
+                HandleProvideAccessTokenComplete(true);
+            }
+            else
+            {
+                UserDeviceAuthorizationHandler.Open(limitedDeviceExchanger, PollCoroutine()); //Step 2
             }
         }
 
-        private void OnAuthentication(string response, string schema)
+        private IEnumerator PollCoroutine() //Step 3
         {
-            Debug.Log("OnAuthentication: " + response + ", " + schema);
-            var arguments = response.Substring(response.IndexOf(tokenArgName, StringComparison.InvariantCultureIgnoreCase)).Split('&').Select(q => q.Split('=')).ToDictionary(q => q.FirstOrDefault(), q => q.Skip(1).FirstOrDefault());
-            if (arguments.ContainsKey(tokenArgName))
-                authorizationCode = arguments[tokenArgName];
-            OnDone?.Invoke(this);
-            IsDone = true;
-            IsError = schema.Contains(cancelUri);
+            do
+            {
+                deviceCodeExchanger.ExchangeAuthCode(limitedDeviceExchanger.DeviceCode);
+                yield return new WaitForSeconds(Convert.ToSingle(limitedDeviceExchanger.Interval));
+            } while (deviceCodeExchanger.IsPending);
+        }
+
+        private void HandleDeviceCodeExchanged(DeviceCodeExchanger exchanger)
+        {
+            if (deviceCodeExchanger.IsError)
+            {
+                if (!deviceCodeExchanger.IsPending)
+                {
+                    Debug.LogError("UnityGoogleDrive: Failed to exchange code Portal");
+                    HandleProvideAccessTokenComplete(true);
+                }
+            }
+            else
+            {
+                settings.CachedAccessToken = exchanger.AccesToken;
+                HandleProvideAccessTokenComplete();
+            }
+        }
+
+
+        private void ExecuteFullAuth()
+        {
+            limitedDeviceExchanger.ExchangeDeviceCode(); // Step 1
         }
     }
 }
