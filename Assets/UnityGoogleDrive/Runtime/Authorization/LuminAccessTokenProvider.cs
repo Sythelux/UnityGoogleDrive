@@ -104,6 +104,7 @@ namespace UnityGoogleDrive
                 deviceCodeExchanger.ExchangeAuthCode(limitedDeviceExchanger.DeviceCode);
                 yield return new WaitForSeconds(Convert.ToSingle(limitedDeviceExchanger.Interval));
             } while (deviceCodeExchanger.IsPending);
+            UserDeviceAuthorizationHandler.Close();
         }
 
         private void HandleDeviceCodeExchanged(DeviceCodeExchanger exchanger)

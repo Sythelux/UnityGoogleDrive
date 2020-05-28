@@ -24,10 +24,16 @@ namespace UnityGoogleDrive
             instance.GetComponent<IShowDeviceCodeCallback>().Show(limitedDeviceExchanger);
             instance.StartCoroutine(pollCoroutine);
         }
+
+        public static void Close()
+        {
+            instance.GetComponent<IShowDeviceCodeCallback>().Hide();
+        }
     }
 
     public interface IShowDeviceCodeCallback
     {
         void Show(LimitedDeviceExchanger limitedDeviceExchanger);
+        void Hide();
     }
 }
